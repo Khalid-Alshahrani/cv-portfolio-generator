@@ -16,6 +16,25 @@ type ValidationResponse = {
   };
 };
 
+type ExtractionResponse = {
+  success: boolean;
+  extraction?: {
+    text: string;
+    pageCount: number;
+    characterCount: number;
+  };
+  error?: {
+    code: string;
+    message: string;
+  };
+};
+
+type ExtractionResult = {
+  text: string;
+  pageCount: number;
+  characterCount: number;
+};
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) {
     return `${(bytes / 1024).toFixed(1)} KB`;
@@ -31,6 +50,8 @@ export default function CvUploader() {
   const [error, setError] = useState<UploadError | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extraction, setExtraction] = useState<ExtractionResult | null>(null);
 
   function validateFileOnClient(file: File): UploadError | null {
     const isPdf =
@@ -96,6 +117,7 @@ export default function CvUploader() {
 
     if (clientValidationError) {
       setSelectedFile(null);
+      setExtraction(null);
       setError(clientValidationError);
 
       if (inputRef.current) {
@@ -107,6 +129,7 @@ export default function CvUploader() {
 
     setError(null);
     setSelectedFile(null);
+    setExtraction(null);
     setIsValidating(true);
 
     const isValid = await validateFileOnServer(file);
@@ -125,6 +148,47 @@ export default function CvUploader() {
     setError(null);
   }
 
+  async function handleExtraction() {
+    if (!selectedFile || isExtracting) {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+
+    setError(null);
+    setExtraction(null);
+    setIsExtracting(true);
+
+    try {
+      const response = await fetch("/api/cv/extract", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = (await response.json()) as ExtractionResponse;
+
+      if (!response.ok || !data.success || !data.extraction) {
+        setError({
+          message:
+            data.error?.message ??
+            "We couldn't read this CV. Please try another PDF.",
+        });
+
+        return;
+      }
+
+      setExtraction(data.extraction);
+    } catch {
+      setError({
+        message:
+          "We couldn't read this CV. Check your connection and try again.",
+      });
+    } finally {
+      setIsExtracting(false);
+    }
+  }
+
   function handleInputChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
@@ -139,7 +203,7 @@ export default function CvUploader() {
     event.preventDefault();
     event.stopPropagation();
 
-    if (!isValidating) {
+    if (!isValidating && !isExtracting) {
       setIsDragging(true);
     }
   }
@@ -155,7 +219,7 @@ export default function CvUploader() {
     event.stopPropagation();
     setIsDragging(false);
 
-    if (isValidating) {
+    if (isValidating || isExtracting) {
       return;
     }
 
@@ -170,6 +234,7 @@ export default function CvUploader() {
 
   function handleRemove() {
     setSelectedFile(null);
+    setExtraction(null);
     setError(null);
 
     if (inputRef.current) {
@@ -178,7 +243,7 @@ export default function CvUploader() {
   }
 
   function openFilePicker() {
-    if (!isValidating) {
+    if (!isValidating && !isExtracting) {
       inputRef.current?.click();
     }
   }
@@ -209,6 +274,21 @@ export default function CvUploader() {
 
             <p className="mt-2 text-sm leading-6 text-zinc-500">
               Checking that your file is a valid PDF.
+            </p>
+          </div>
+        ) : isExtracting ? (
+          <div
+            className="flex flex-col items-center text-center"
+            aria-live="polite"
+          >
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-200 border-t-zinc-950" />
+
+            <h2 className="mt-6 text-lg font-semibold text-zinc-950">
+              Reading your CV
+            </h2>
+
+            <p className="mt-2 text-sm leading-6 text-zinc-500">
+              Extracting the readable text from your document.
             </p>
           </div>
         ) : !selectedFile ? (
@@ -312,6 +392,59 @@ export default function CvUploader() {
                 </button>
               </div>
             </div>
+
+            {!extraction ? (
+              <button
+                type="button"
+                onClick={() => void handleExtraction()}
+                className="mt-6 w-full rounded-lg bg-zinc-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2"
+              >
+                Continue
+              </button>
+            ) : (
+              <div className="mt-6 rounded-xl border border-zinc-200 bg-zinc-50 p-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-950">
+                      CV text extracted
+                    </p>
+
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {extraction.pageCount}{" "}
+                      {extraction.pageCount === 1 ? "page" : "pages"} ·{" "}
+                      {extraction.characterCount.toLocaleString()} characters
+                    </p>
+                  </div>
+
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white">
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 20 20"
+                      fill="none"
+                      className="h-4 w-4"
+                    >
+                      <path
+                        d="m5 10 3 3 7-7"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </div>
+                </div>
+
+                <details className="mt-5">
+                  <summary className="cursor-pointer text-sm font-medium text-zinc-700">
+                    View extracted text
+                  </summary>
+
+                  <pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-zinc-200 bg-white p-4 text-xs leading-5 text-zinc-600">
+                    {extraction.text}
+                  </pre>
+                </details>
+              </div>
+            )}
 
             <input
               ref={inputRef}
