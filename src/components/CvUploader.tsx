@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, DragEvent, useRef, useState } from "react";
+import type { PortfolioData } from "@/lib/schema/portfolio";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
@@ -29,6 +30,15 @@ type ExtractionResponse = {
   };
 };
 
+type StructureResponse = {
+  success: boolean;
+  data?: PortfolioData;
+  error?: {
+    code: string;
+    message: string;
+  };
+};
+
 type ExtractionResult = {
   text: string;
   pageCount: number;
@@ -48,10 +58,14 @@ export default function CvUploader() {
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<UploadError | null>(null);
+
   const [isDragging, setIsDragging] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
+  const [isStructuring, setIsStructuring] = useState(false);
+
   const [extraction, setExtraction] = useState<ExtractionResult | null>(null);
+  const [portfolioData, setPortfolioData] = useState<PortfolioData | null>(null);
 
   function validateFileOnClient(file: File): UploadError | null {
     const isPdf =
@@ -118,6 +132,7 @@ export default function CvUploader() {
     if (clientValidationError) {
       setSelectedFile(null);
       setExtraction(null);
+      setPortfolioData(null);
       setError(clientValidationError);
 
       if (inputRef.current) {
@@ -130,6 +145,7 @@ export default function CvUploader() {
     setError(null);
     setSelectedFile(null);
     setExtraction(null);
+    setPortfolioData(null);
     setIsValidating(true);
 
     const isValid = await validateFileOnServer(file);
@@ -145,7 +161,6 @@ export default function CvUploader() {
     }
 
     setSelectedFile(file);
-    setError(null);
   }
 
   async function handleExtraction() {
@@ -158,6 +173,7 @@ export default function CvUploader() {
 
     setError(null);
     setExtraction(null);
+    setPortfolioData(null);
     setIsExtracting(true);
 
     try {
@@ -189,6 +205,49 @@ export default function CvUploader() {
     }
   }
 
+  async function handleStructure() {
+    if (!extraction || isStructuring) {
+      return;
+    }
+
+    setError(null);
+    setPortfolioData(null);
+    setIsStructuring(true);
+
+    try {
+      const response = await fetch("/api/cv/structure", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: extraction.text,
+        }),
+      });
+
+      const data = (await response.json()) as StructureResponse;
+
+      if (!response.ok || !data.success || !data.data) {
+        setError({
+          message:
+            data.error?.message ??
+            "We couldn't organize the information in this CV. Please try again.",
+        });
+
+        return;
+      }
+
+      setPortfolioData(data.data);
+    } catch {
+      setError({
+        message:
+          "We couldn't organize the information in this CV. Check your connection and try again.",
+      });
+    } finally {
+      setIsStructuring(false);
+    }
+  }
+
   function handleInputChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
@@ -203,7 +262,7 @@ export default function CvUploader() {
     event.preventDefault();
     event.stopPropagation();
 
-    if (!isValidating && !isExtracting) {
+    if (!isValidating && !isExtracting && !isStructuring) {
       setIsDragging(true);
     }
   }
@@ -219,7 +278,7 @@ export default function CvUploader() {
     event.stopPropagation();
     setIsDragging(false);
 
-    if (isValidating || isExtracting) {
+    if (isValidating || isExtracting || isStructuring) {
       return;
     }
 
@@ -235,6 +294,7 @@ export default function CvUploader() {
   function handleRemove() {
     setSelectedFile(null);
     setExtraction(null);
+    setPortfolioData(null);
     setError(null);
 
     if (inputRef.current) {
@@ -243,10 +303,12 @@ export default function CvUploader() {
   }
 
   function openFilePicker() {
-    if (!isValidating && !isExtracting) {
+    if (!isValidating && !isExtracting && !isStructuring) {
       inputRef.current?.click();
     }
   }
+
+  const isProcessing = isValidating || isExtracting || isStructuring;
 
   return (
     <section className="w-full max-w-2xl">
@@ -262,35 +324,20 @@ export default function CvUploader() {
         onDrop={handleDrop}
       >
         {isValidating ? (
-          <div
-            className="flex flex-col items-center text-center"
-            aria-live="polite"
-          >
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-200 border-t-zinc-950" />
-
-            <h2 className="mt-6 text-lg font-semibold text-zinc-950">
-              Validating your CV
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-zinc-500">
-              Checking that your file is a valid PDF.
-            </p>
-          </div>
+          <ProcessingState
+            title="Validating your CV"
+            description="Checking that your file is a valid PDF."
+          />
         ) : isExtracting ? (
-          <div
-            className="flex flex-col items-center text-center"
-            aria-live="polite"
-          >
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-200 border-t-zinc-950" />
-
-            <h2 className="mt-6 text-lg font-semibold text-zinc-950">
-              Reading your CV
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-zinc-500">
-              Extracting the readable text from your document.
-            </p>
-          </div>
+          <ProcessingState
+            title="Reading your CV"
+            description="Extracting the readable text from your document."
+          />
+        ) : isStructuring ? (
+          <ProcessingState
+            title="Organizing your information"
+            description="Structuring the information found in your CV."
+          />
         ) : !selectedFile ? (
           <div className="flex flex-col items-center text-center">
             <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50">
@@ -341,23 +388,7 @@ export default function CvUploader() {
         ) : (
           <div>
             <div className="flex items-center gap-2">
-              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-zinc-950 text-white">
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 20 20"
-                  fill="none"
-                  className="h-3 w-3"
-                >
-                  <path
-                    d="m5.5 10 3 3 6-6"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </div>
-
+              <StatusCheck />
               <p className="text-sm font-medium text-zinc-700">
                 CV validated
               </p>
@@ -378,7 +409,8 @@ export default function CvUploader() {
                 <button
                   type="button"
                   onClick={openFilePicker}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100"
+                  disabled={isProcessing}
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Replace
                 </button>
@@ -386,7 +418,8 @@ export default function CvUploader() {
                 <button
                   type="button"
                   onClick={handleRemove}
-                  className="rounded-lg px-3 py-2 text-sm font-medium text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-950"
+                  disabled={isProcessing}
+                  className="rounded-lg px-3 py-2 text-sm font-medium text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-950 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Remove
                 </button>
@@ -416,22 +449,7 @@ export default function CvUploader() {
                     </p>
                   </div>
 
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white">
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 20 20"
-                      fill="none"
-                      className="h-4 w-4"
-                    >
-                      <path
-                        d="m5 10 3 3 7-7"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
+                  <StatusCheck large />
                 </div>
 
                 <details className="mt-5">
@@ -441,6 +459,44 @@ export default function CvUploader() {
 
                   <pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-zinc-200 bg-white p-4 text-xs leading-5 text-zinc-600">
                     {extraction.text}
+                  </pre>
+                </details>
+              </div>
+            )}
+
+            {extraction && !portfolioData && (
+              <button
+                type="button"
+                onClick={() => void handleStructure()}
+                className="mt-4 w-full rounded-lg bg-zinc-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2"
+              >
+                Organize information
+              </button>
+            )}
+
+            {portfolioData && (
+              <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-5">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-950">
+                      Information organized
+                    </p>
+
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Structured data is ready for review.
+                    </p>
+                  </div>
+
+                  <StatusCheck large />
+                </div>
+
+                <details className="mt-5">
+                  <summary className="cursor-pointer text-sm font-medium text-zinc-700">
+                    View structured data
+                  </summary>
+
+                  <pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-zinc-200 bg-white p-4 text-xs leading-5 text-zinc-600">
+                    {JSON.stringify(portfolioData, null, 2)}
                   </pre>
                 </details>
               </div>
@@ -466,5 +522,56 @@ export default function CvUploader() {
         </div>
       )}
     </section>
+  );
+}
+
+function ProcessingState({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div
+      className="flex flex-col items-center text-center"
+      aria-live="polite"
+    >
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-200 border-t-zinc-950" />
+
+      <h2 className="mt-6 text-lg font-semibold text-zinc-950">
+        {title}
+      </h2>
+
+      <p className="mt-2 text-sm leading-6 text-zinc-500">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+function StatusCheck({ large = false }: { large?: boolean }) {
+  return (
+    <div
+      className={[
+        "flex shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white",
+        large ? "h-8 w-8" : "h-5 w-5",
+      ].join(" ")}
+    >
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 20 20"
+        fill="none"
+        className={large ? "h-4 w-4" : "h-3 w-3"}
+      >
+        <path
+          d="m5 10 3 3 7-7"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
   );
 }

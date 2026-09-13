@@ -42,8 +42,9 @@ export async function extractTextFromPdf(
   });
 
   try {
-    const result = await parser.getText();
-    const text = normalizeExtractedText(result.text);
+    const result = await parser.getText({
+      parseHyperlinks: true,
+    }); const text = normalizeExtractedText(result.text);
 
     if (text.length === 0) {
       throw new PdfExtractionError(
