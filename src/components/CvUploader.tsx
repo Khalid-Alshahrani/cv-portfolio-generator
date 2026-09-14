@@ -1,6 +1,14 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  DragEvent,
+  useRef,
+  useState,
+} from "react";
+
+import PortfolioPreview from "@/components/portfolio/PortfolioPreview";
+import PortfolioReview from "@/components/review/PortfolioReview";
 import type { PortfolioData } from "@/lib/schema/portfolio";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -45,67 +53,126 @@ type ExtractionResult = {
   characterCount: number;
 };
 
+type AppStage =
+  | "upload"
+  | "review"
+  | "preview";
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) {
     return `${(bytes / 1024).toFixed(1)} KB`;
   }
 
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(
+    bytes /
+    (1024 * 1024)
+  ).toFixed(2)} MB`;
 }
 
 export default function CvUploader() {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef =
+    useRef<HTMLInputElement>(null);
 
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [error, setError] = useState<UploadError | null>(null);
+  const [stage, setStage] =
+    useState<AppStage>("upload");
 
-  const [isDragging, setIsDragging] = useState(false);
-  const [isValidating, setIsValidating] = useState(false);
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [isStructuring, setIsStructuring] = useState(false);
+  const [selectedFile, setSelectedFile] =
+    useState<File | null>(null);
 
-  const [extraction, setExtraction] = useState<ExtractionResult | null>(null);
-  const [portfolioData, setPortfolioData] = useState<PortfolioData | null>(null);
+  const [error, setError] =
+    useState<UploadError | null>(null);
 
-  function validateFileOnClient(file: File): UploadError | null {
+  const [isDragging, setIsDragging] =
+    useState(false);
+
+  const [isValidating, setIsValidating] =
+    useState(false);
+
+  const [isExtracting, setIsExtracting] =
+    useState(false);
+
+  const [isStructuring, setIsStructuring] =
+    useState(false);
+
+  const [extraction, setExtraction] =
+    useState<ExtractionResult | null>(null);
+
+  const [portfolioData, setPortfolioData] =
+    useState<PortfolioData | null>(null);
+
+  const [approvedData, setApprovedData] =
+    useState<PortfolioData | null>(null);
+
+  const [profilePhoto, setProfilePhoto] =
+    useState<File | null>(null);
+
+  const [profilePhotoUrl, setProfilePhotoUrl] =
+    useState<string | null>(null);
+
+  const [cvDownloadUrl, setCvDownloadUrl] =
+    useState<string | null>(null);
+
+  const isProcessing =
+    isValidating ||
+    isExtracting ||
+    isStructuring;
+
+  function validateFileOnClient(
+    file: File,
+  ): UploadError | null {
     const isPdf =
       file.type === "application/pdf" ||
-      file.name.toLowerCase().endsWith(".pdf");
+      file.name
+        .toLowerCase()
+        .endsWith(".pdf");
 
     if (!isPdf) {
       return {
-        message: "Please choose a PDF file.",
+        message:
+          "Please choose a PDF file.",
       };
     }
 
     if (file.size === 0) {
       return {
-        message: "This file is empty. Please choose another PDF.",
+        message:
+          "This file is empty. Please choose another PDF.",
       };
     }
 
     if (file.size > MAX_FILE_SIZE) {
       return {
-        message: "Your CV must be 5 MB or smaller.",
+        message:
+          "Your CV must be 5 MB or smaller.",
       };
     }
 
     return null;
   }
 
-  async function validateFileOnServer(file: File): Promise<boolean> {
+  async function validateFileOnServer(
+    file: File,
+  ): Promise<boolean> {
     const formData = new FormData();
+
     formData.append("file", file);
 
     try {
-      const response = await fetch("/api/cv/validate", {
-        method: "POST",
-        body: formData,
-      });
+      const response = await fetch(
+        "/api/cv/validate",
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
 
-      const data = (await response.json()) as ValidationResponse;
+      const data =
+        (await response.json()) as ValidationResponse;
 
-      if (!response.ok || !data.success) {
+      if (
+        !response.ok ||
+        !data.success
+      ) {
         setError({
           message:
             data.error?.message ??
@@ -126,14 +193,25 @@ export default function CvUploader() {
     }
   }
 
-  async function handleFile(file: File) {
-    const clientValidationError = validateFileOnClient(file);
+  function resetProcessedData() {
+    setExtraction(null);
+    setPortfolioData(null);
+    setApprovedData(null);
+    setStage("upload");
+  }
+
+  async function handleFile(
+    file: File,
+  ) {
+    const clientValidationError =
+      validateFileOnClient(file);
 
     if (clientValidationError) {
+      resetProcessedData();
       setSelectedFile(null);
-      setExtraction(null);
-      setPortfolioData(null);
-      setError(clientValidationError);
+      setError(
+        clientValidationError,
+      );
 
       if (inputRef.current) {
         inputRef.current.value = "";
@@ -143,12 +221,12 @@ export default function CvUploader() {
     }
 
     setError(null);
+    resetProcessedData();
     setSelectedFile(null);
-    setExtraction(null);
-    setPortfolioData(null);
     setIsValidating(true);
 
-    const isValid = await validateFileOnServer(file);
+    const isValid =
+      await validateFileOnServer(file);
 
     setIsValidating(false);
 
@@ -160,31 +238,52 @@ export default function CvUploader() {
       return;
     }
 
+    if (cvDownloadUrl) {
+      URL.revokeObjectURL(cvDownloadUrl);
+    }
+
+    setCvDownloadUrl(URL.createObjectURL(file));
     setSelectedFile(file);
   }
 
   async function handleExtraction() {
-    if (!selectedFile || isExtracting) {
+    if (
+      !selectedFile ||
+      isExtracting
+    ) {
       return;
     }
 
     const formData = new FormData();
-    formData.append("file", selectedFile);
+
+    formData.append(
+      "file",
+      selectedFile,
+    );
 
     setError(null);
     setExtraction(null);
     setPortfolioData(null);
+    setApprovedData(null);
     setIsExtracting(true);
 
     try {
-      const response = await fetch("/api/cv/extract", {
-        method: "POST",
-        body: formData,
-      });
+      const response = await fetch(
+        "/api/cv/extract",
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
 
-      const data = (await response.json()) as ExtractionResponse;
+      const data =
+        (await response.json()) as ExtractionResponse;
 
-      if (!response.ok || !data.success || !data.extraction) {
+      if (
+        !response.ok ||
+        !data.success ||
+        !data.extraction
+      ) {
         setError({
           message:
             data.error?.message ??
@@ -194,7 +293,9 @@ export default function CvUploader() {
         return;
       }
 
-      setExtraction(data.extraction);
+      setExtraction(
+        data.extraction,
+      );
     } catch {
       setError({
         message:
@@ -206,28 +307,41 @@ export default function CvUploader() {
   }
 
   async function handleStructure() {
-    if (!extraction || isStructuring) {
+    if (
+      !extraction ||
+      isStructuring
+    ) {
       return;
     }
 
     setError(null);
     setPortfolioData(null);
+    setApprovedData(null);
     setIsStructuring(true);
 
     try {
-      const response = await fetch("/api/cv/structure", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(
+        "/api/cv/structure",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            text: extraction.text,
+          }),
         },
-        body: JSON.stringify({
-          text: extraction.text,
-        }),
-      });
+      );
 
-      const data = (await response.json()) as StructureResponse;
+      const data =
+        (await response.json()) as StructureResponse;
 
-      if (!response.ok || !data.success || !data.data) {
+      if (
+        !response.ok ||
+        !data.success ||
+        !data.data
+      ) {
         setError({
           message:
             data.error?.message ??
@@ -238,6 +352,7 @@ export default function CvUploader() {
       }
 
       setPortfolioData(data.data);
+      setStage("review");
     } catch {
       setError({
         message:
@@ -248,8 +363,11 @@ export default function CvUploader() {
     }
   }
 
-  function handleInputChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+  function handleInputChange(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const file =
+      event.target.files?.[0];
 
     if (!file) {
       return;
@@ -258,31 +376,40 @@ export default function CvUploader() {
     void handleFile(file);
   }
 
-  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+  function handleDragOver(
+    event: DragEvent<HTMLDivElement>,
+  ) {
     event.preventDefault();
     event.stopPropagation();
 
-    if (!isValidating && !isExtracting && !isStructuring) {
+    if (!isProcessing) {
       setIsDragging(true);
     }
   }
 
-  function handleDragLeave(event: DragEvent<HTMLDivElement>) {
+  function handleDragLeave(
+    event: DragEvent<HTMLDivElement>,
+  ) {
     event.preventDefault();
     event.stopPropagation();
+
     setIsDragging(false);
   }
 
-  function handleDrop(event: DragEvent<HTMLDivElement>) {
+  function handleDrop(
+    event: DragEvent<HTMLDivElement>,
+  ) {
     event.preventDefault();
     event.stopPropagation();
+
     setIsDragging(false);
 
-    if (isValidating || isExtracting || isStructuring) {
+    if (isProcessing) {
       return;
     }
 
-    const file = event.dataTransfer.files?.[0];
+    const file =
+      event.dataTransfer.files?.[0];
 
     if (!file) {
       return;
@@ -293,8 +420,7 @@ export default function CvUploader() {
 
   function handleRemove() {
     setSelectedFile(null);
-    setExtraction(null);
-    setPortfolioData(null);
+    resetProcessedData();
     setError(null);
 
     if (inputRef.current) {
@@ -303,13 +429,93 @@ export default function CvUploader() {
   }
 
   function openFilePicker() {
-    if (!isValidating && !isExtracting && !isStructuring) {
+    if (!isProcessing) {
       inputRef.current?.click();
     }
   }
 
-  const isProcessing = isValidating || isExtracting || isStructuring;
+  function handleProfilePhotoChange(
+    file: File | null,
+    previewUrl: string | null,
+  ) {
+    if (profilePhotoUrl && profilePhotoUrl !== previewUrl) {
+      URL.revokeObjectURL(profilePhotoUrl);
+    }
 
+    setProfilePhoto(file);
+    setProfilePhotoUrl(previewUrl);
+  }
+
+  function handleBackToLanding() {
+    setStage("upload");
+    setSelectedFile(null);
+    setExtraction(null);
+    setPortfolioData(null);
+    setApprovedData(null);
+    setError(null);
+  }
+
+  function handleReviewBack() {
+    setStage("upload");
+  }
+
+  function handleReviewConfirm(
+    reviewedData: PortfolioData,
+  ) {
+    setApprovedData(
+      reviewedData,
+    );
+
+    setPortfolioData(
+      reviewedData,
+    );
+
+    setStage("preview");
+  }
+
+  function handleEditAgain() {
+    if (approvedData) {
+      setPortfolioData(
+        approvedData,
+      );
+    }
+
+    setStage("review");
+  }
+
+  if (
+    stage === "review" &&
+    portfolioData
+  ) {
+    return (
+      <PortfolioReview
+        initialData={portfolioData}
+        profilePhoto={profilePhoto}
+        profilePhotoUrl={profilePhotoUrl}
+        onProfilePhotoChange={handleProfilePhotoChange}
+        onBack={handleReviewBack}
+        onConfirm={
+          handleReviewConfirm
+        }
+      />
+    );
+  }
+
+  if (
+    stage === "preview" &&
+    approvedData
+  ) {
+    return (
+      <PortfolioPreview
+        data={approvedData}
+        profilePhotoUrl={profilePhotoUrl}
+        cvDownloadUrl={cvDownloadUrl}
+        cvFileName={selectedFile?.name ?? null}
+        onEdit={handleEditAgain}
+        onBackToLanding={handleBackToLanding}
+      />
+    );
+  }
   return (
     <section className="w-full max-w-2xl">
       <div
@@ -389,6 +595,7 @@ export default function CvUploader() {
           <div>
             <div className="flex items-center gap-2">
               <StatusCheck />
+
               <p className="text-sm font-medium text-zinc-700">
                 CV validated
               </p>
@@ -401,7 +608,9 @@ export default function CvUploader() {
                 </p>
 
                 <p className="mt-1 text-xs text-zinc-500">
-                  {formatFileSize(selectedFile.size)}
+                  {formatFileSize(
+                    selectedFile.size,
+                  )}
                 </p>
               </div>
 
@@ -429,7 +638,9 @@ export default function CvUploader() {
             {!extraction ? (
               <button
                 type="button"
-                onClick={() => void handleExtraction()}
+                onClick={() =>
+                  void handleExtraction()
+                }
                 className="mt-6 w-full rounded-lg bg-zinc-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2"
               >
                 Continue
@@ -444,62 +655,30 @@ export default function CvUploader() {
 
                     <p className="mt-1 text-xs text-zinc-500">
                       {extraction.pageCount}{" "}
-                      {extraction.pageCount === 1 ? "page" : "pages"} ·{" "}
-                      {extraction.characterCount.toLocaleString()} characters
+                      {extraction.pageCount === 1
+                        ? "page"
+                        : "pages"}{" "}
+                      ·{" "}
+                      {extraction.characterCount.toLocaleString()}{" "}
+                      characters
                     </p>
                   </div>
 
                   <StatusCheck large />
                 </div>
-
-                <details className="mt-5">
-                  <summary className="cursor-pointer text-sm font-medium text-zinc-700">
-                    View extracted text
-                  </summary>
-
-                  <pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-zinc-200 bg-white p-4 text-xs leading-5 text-zinc-600">
-                    {extraction.text}
-                  </pre>
-                </details>
               </div>
             )}
 
-            {extraction && !portfolioData && (
+            {extraction && (
               <button
                 type="button"
-                onClick={() => void handleStructure()}
+                onClick={() =>
+                  void handleStructure()
+                }
                 className="mt-4 w-full rounded-lg bg-zinc-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2"
               >
-                Organize information
+                Review extracted information
               </button>
-            )}
-
-            {portfolioData && (
-              <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-5">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-semibold text-zinc-950">
-                      Information organized
-                    </p>
-
-                    <p className="mt-1 text-xs text-zinc-500">
-                      Structured data is ready for review.
-                    </p>
-                  </div>
-
-                  <StatusCheck large />
-                </div>
-
-                <details className="mt-5">
-                  <summary className="cursor-pointer text-sm font-medium text-zinc-700">
-                    View structured data
-                  </summary>
-
-                  <pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-zinc-200 bg-white p-4 text-xs leading-5 text-zinc-600">
-                    {JSON.stringify(portfolioData, null, 2)}
-                  </pre>
-                </details>
-              </div>
             )}
 
             <input
@@ -523,9 +702,7 @@ export default function CvUploader() {
       )}
     </section>
   );
-}
-
-function ProcessingState({
+} function ProcessingState({
   title,
   description,
 }: {
@@ -550,7 +727,11 @@ function ProcessingState({
   );
 }
 
-function StatusCheck({ large = false }: { large?: boolean }) {
+function StatusCheck({
+  large = false,
+}: {
+  large?: boolean;
+}) {
   return (
     <div
       className={[
@@ -562,7 +743,11 @@ function StatusCheck({ large = false }: { large?: boolean }) {
         aria-hidden="true"
         viewBox="0 0 20 20"
         fill="none"
-        className={large ? "h-4 w-4" : "h-3 w-3"}
+        className={
+          large
+            ? "h-4 w-4"
+            : "h-3 w-3"
+        }
       >
         <path
           d="m5 10 3 3 7-7"
