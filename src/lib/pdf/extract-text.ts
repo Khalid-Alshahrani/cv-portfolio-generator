@@ -1,5 +1,4 @@
-import { PDFParse } from "pdf-parse";
-
+import pdf from "pdf-parse/lib/pdf-parse.js";
 const MIN_MEANINGFUL_TEXT_LENGTH = 50;
 
 export type PdfExtractionResult = {
@@ -45,14 +44,8 @@ function normalizeExtractedText(
 export async function extractTextFromPdf(
   fileBuffer: Buffer,
 ): Promise<PdfExtractionResult> {
-  const parser = new PDFParse({
-    data: fileBuffer,
-  });
-
   try {
-    const result = await parser.getText({
-      parseHyperlinks: true,
-    });
+    const result = await pdf(fileBuffer);
 
     const text = normalizeExtractedText(
       result.text,
@@ -77,13 +70,12 @@ export async function extractTextFromPdf(
 
     return {
       text,
-      pageCount: result.total,
+      pageCount: result.numpages,
       characterCount: text.length,
     };
   } catch (error) {
     if (
-      error instanceof
-      PdfExtractionError
+      error instanceof PdfExtractionError
     ) {
       throw error;
     }
@@ -97,7 +89,5 @@ export async function extractTextFromPdf(
       "PDF_UNREADABLE",
       "The PDF could not be read.",
     );
-  } finally {
-    await parser.destroy();
   }
 }
