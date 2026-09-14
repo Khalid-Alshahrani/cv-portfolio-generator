@@ -16,20 +16,28 @@ export type PdfExtractionErrorCode =
 export class PdfExtractionError extends Error {
   code: PdfExtractionErrorCode;
 
-  constructor(code: PdfExtractionErrorCode, message: string) {
+  constructor(
+    code: PdfExtractionErrorCode,
+    message: string,
+  ) {
     super(message);
     this.name = "PdfExtractionError";
     this.code = code;
   }
 }
 
-function normalizeExtractedText(text: string): string {
+function normalizeExtractedText(
+  text: string,
+): string {
   return text
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
-    .replace(/^\s*--\s*\d+\s+of\s+\d+\s*--\s*$/gim, "")
+    .replace(
+      /^\s*--\s*\d+\s+of\s+\d+\s*--\s*$/gim,
+      "",
+    )
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -45,7 +53,10 @@ export async function extractTextFromPdf(
     const result = await parser.getText({
       parseHyperlinks: true,
     });
-    const text = normalizeExtractedText(result.text);
+
+    const text = normalizeExtractedText(
+      result.text,
+    );
 
     if (text.length === 0) {
       throw new PdfExtractionError(
@@ -54,7 +65,10 @@ export async function extractTextFromPdf(
       );
     }
 
-    if (text.length < MIN_MEANINGFUL_TEXT_LENGTH) {
+    if (
+      text.length <
+      MIN_MEANINGFUL_TEXT_LENGTH
+    ) {
       throw new PdfExtractionError(
         "INSUFFICIENT_TEXT",
         "The PDF does not contain enough readable text to process as a CV.",
@@ -67,9 +81,17 @@ export async function extractTextFromPdf(
       characterCount: text.length,
     };
   } catch (error) {
-    if (error instanceof PdfExtractionError) {
+    if (
+      error instanceof
+      PdfExtractionError
+    ) {
       throw error;
     }
+
+    console.error(
+      "PDF extraction failed:",
+      error,
+    );
 
     throw new PdfExtractionError(
       "PDF_UNREADABLE",
