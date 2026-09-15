@@ -4,6 +4,7 @@ import {
   PdfValidationError,
   validatePdfFile,
 } from "@/lib/cv/validate-pdf";
+
 import {
   extractTextFromPdf,
   PdfExtractionError,
@@ -14,19 +15,26 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const uploadedFile = formData.get("file");
 
-    const validatedPdf = await validatePdfFile(uploadedFile);
+    const validatedPdf =
+      await validatePdfFile(uploadedFile);
 
-    const arrayBuffer = await validatedPdf.file.arrayBuffer();
-    const fileBuffer = Buffer.from(arrayBuffer);
+    const arrayBuffer =
+      await validatedPdf.file.arrayBuffer();
 
-    const extraction = await extractTextFromPdf(fileBuffer);
+    const fileBuffer =
+      Buffer.from(arrayBuffer);
+
+    const extraction =
+      await extractTextFromPdf(fileBuffer);
 
     return NextResponse.json({
       success: true,
       extraction: {
         text: extraction.text,
         pageCount: extraction.pageCount,
-        characterCount: extraction.characterCount,
+        characterCount:
+          extraction.characterCount,
+        links: extraction.links,
       },
     });
   } catch (error) {
@@ -39,7 +47,9 @@ export async function POST(request: Request) {
             message: error.message,
           },
         },
-        { status: error.status },
+        {
+          status: error.status,
+        },
       );
     }
 
@@ -58,19 +68,29 @@ export async function POST(request: Request) {
             message: error.message,
           },
         },
-        { status },
+        {
+          status,
+        },
       );
     }
+
+    console.error(
+      "Unexpected CV extraction error:",
+      error,
+    );
 
     return NextResponse.json(
       {
         success: false,
         error: {
           code: "EXTRACTION_FAILED",
-          message: "The CV could not be processed.",
+          message:
+            "The CV could not be processed.",
         },
       },
-      { status: 500 },
+      {
+        status: 500,
+      },
     );
   }
 }

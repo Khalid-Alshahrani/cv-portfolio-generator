@@ -31,6 +31,7 @@ type ExtractionResponse = {
     text: string;
     pageCount: number;
     characterCount: number;
+    links: string[];
   };
   error?: {
     code: string;
@@ -51,6 +52,7 @@ type ExtractionResult = {
   text: string;
   pageCount: number;
   characterCount: number;
+  links: string[];
 };
 
 type AppStage =
@@ -330,6 +332,7 @@ export default function CvUploader() {
           },
           body: JSON.stringify({
             text: extraction.text,
+            links: extraction.links,
           }),
         },
       );
@@ -661,6 +664,11 @@ export default function CvUploader() {
                       ·{" "}
                       {extraction.characterCount.toLocaleString()}{" "}
                       characters
+                      {" · "}
+                      {extraction.links.length}{" "}
+                      {extraction.links.length === 1
+                        ? "link"
+                        : "links"}
                     </p>
                   </div>
 

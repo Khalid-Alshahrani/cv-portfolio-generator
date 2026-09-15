@@ -1,10 +1,16 @@
-import pdf from "pdf-parse/lib/pdf-parse.js";
+import {
+  extractLinks,
+  extractText,
+  getDocumentProxy,
+} from "unpdf";
+
 const MIN_MEANINGFUL_TEXT_LENGTH = 50;
 
 export type PdfExtractionResult = {
   text: string;
   pageCount: number;
   characterCount: number;
+  links: string[];
 };
 
 export type PdfExtractionErrorCode =
@@ -33,11 +39,6 @@ function normalizeExtractedText(
     .replace(/\r/g, "\n")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
-    .replace(
-      /^\s*--\s*\d+\s+of\s+\d+\s*--\s*$/gim,
-      "",
-    )
-    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
@@ -45,10 +46,23 @@ export async function extractTextFromPdf(
   fileBuffer: Buffer,
 ): Promise<PdfExtractionResult> {
   try {
-    const result = await pdf(fileBuffer);
+    const pdf = await getDocumentProxy(
+      new Uint8Array(fileBuffer),
+    );
+
+    const textResult = await extractText(
+      pdf,
+      {
+        mergePages: true,
+      },
+    );
+
+    const linkResult = await extractLinks(
+      pdf,
+    );
 
     const text = normalizeExtractedText(
-      result.text,
+      textResult.text,
     );
 
     if (text.length === 0) {
@@ -68,10 +82,23 @@ export async function extractTextFromPdf(
       );
     }
 
+    const links = Array.from(
+      new Set(
+        linkResult.links
+          .map((link) => link.trim())
+          .filter(
+            (link) =>
+              link.startsWith("https://") ||
+              link.startsWith("http://"),
+          ),
+      ),
+    );
+
     return {
       text,
-      pageCount: result.numpages,
+      pageCount: pdf.numPages,
       characterCount: text.length,
+      links,
     };
   } catch (error) {
     if (
